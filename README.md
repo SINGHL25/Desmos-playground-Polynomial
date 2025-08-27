@@ -2,6 +2,9 @@
 A professional, interactive dashboard
 # Polynomial Regression Playground 🧮📊
 
+![Uploading ChatGPT Image Aug 27, 2025, 10_01_47 PM.png…]()
+
+
 Interactive Streamlit app to explore **polynomial regression** like a mini Desmos:
 
 - Fit curves of degree 1-5

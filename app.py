@@ -4,115 +4,123 @@ import pandas as pd
 import plotly.graph_objects as go
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
-import joblib
+from sklearn.metrics import r2_score
 
-st.set_page_config(page_title="Polynomial Playground 3D", layout="wide")
-st.title("📊 Polynomial Playground – Multi-Curve & 3D Surface")
+st.set_page_config(page_title="Polynomial Playground Regression", layout="wide")
+st.title("📊 Polynomial Regression Playground – Interactive Data + Multi-Curve + 3D")
 
 # ----------------------------
-# Sidebar
+# Sidebar Settings
 # ----------------------------
 st.sidebar.header("Settings")
 
-# Multi-curve control
-num_curves = st.sidebar.slider("Number of Curves", 1, 5, 1)
-curve_names = [st.sidebar.text_input(f"Curve {i+1} Name", f"Curve_{i+1}") for i in range(num_curves)]
-
-# Polynomial degrees per curve
-degrees = [st.sidebar.selectbox(f"Degree {curve_names[i]}", [1,2,3,4,5], index=1) for i in range(num_curves)]
-
-# 3D surface toggle
-enable_3d = st.sidebar.checkbox("Enable 3D Bivariate Surface (z=f(x,y))")
-
-# Save / Load
-if st.sidebar.button("Save All Curves"):
-    joblib.dump({"curve_names": curve_names, "degrees": degrees}, "saved_curves.pkl")
-    st.sidebar.success("✅ Curves saved as `saved_curves.pkl`")
-
-uploaded_file = st.sidebar.file_uploader("Load Saved Curves (.pkl)", type=["pkl"])
-if uploaded_file:
-    loaded = joblib.load(uploaded_file)
-    curve_names = loaded.get("curve_names", curve_names)
-    degrees = loaded.get("degrees", degrees)
+num_curves = st.sidebar.slider("Number of 1D Curves", 1, 5, 2)
+degree = st.sidebar.slider("Polynomial Degree", 1, 5, 2)
+num_points = st.sidebar.slider("Points per Curve", 3, 20, 5)
+x_min = st.sidebar.number_input("X-min", value=-10.0)
+x_max = st.sidebar.number_input("X-max", value=10.0)
 
 # ----------------------------
-# Curve Data Input
+# Data Upload / Manual Points
 # ----------------------------
-st.subheader("Curve Points Input")
-curves_data = {}
-for i in range(num_curves):
-    st.markdown(f"### {curve_names[i]}")
-    num_points = st.slider(f"Number of points for {curve_names[i]}", 3, 20, 5, key=i)
-    x_min = st.number_input(f"X-min for {curve_names[i]}", value=-10.0, key=f"xmin{i}")
-    x_max = st.number_input(f"X-max for {curve_names[i]}", value=10.0, key=f"xmax{i}")
-    
-    # Default points
-    if 'x_points' not in st.session_state:
-        st.session_state[f"x_points_{i}"] = list(np.linspace(x_min, x_max, num_points))
-        st.session_state[f"y_points_{i}"] = [0]*num_points
-    
-    points_df = pd.DataFrame({
-        "X": st.session_state[f"x_points_{i}"],
-        "Y": st.session_state[f"y_points_{i}"]
-    })
-    edited_df = st.data_editor(points_df, num_rows="dynamic", key=f"editor{i}")
-    st.session_state[f"x_points_{i}"] = edited_df["X"].values
-    st.session_state[f"y_points_{i}"] = edited_df["Y"].values
-    curves_data[curve_names[i]] = {
-        "X": edited_df["X"].values,
-        "Y": edited_df["Y"].values,
-        "degree": degrees[i]
-    }
+st.sidebar.header("Data Input")
+data_option = st.sidebar.radio("Data Source", ["Random Generated", "Upload CSV", "Manual Points"])
+
+if data_option == "Upload CSV":
+    uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.write("### Uploaded Data Preview")
+        st.dataframe(df.head())
+        X_data = df.iloc[:,0].values.reshape(-1,1)
+        Y_data = df.iloc[:,1].values
+    else:
+        st.stop()
+elif data_option == "Manual Points":
+    st.sidebar.write("Enter X and Y points separated by commas (e.g., -1,0,1,2)")
+    x_input = st.sidebar.text_input("X values", "-3,-2,-1,0,1,2,3")
+    y_input = st.sidebar.text_input("Y values", "-5,-2,-1,0,1,4,9")
+    X_data = np.array([float(x) for x in x_input.split(",")]).reshape(-1,1)
+    Y_data = np.array([float(y) for y in y_input.split(",")])
+else:
+    X_data = np.linspace(x_min, x_max, num_points).reshape(-1,1)
+    Y_data = np.zeros_like(X_data)
 
 # ----------------------------
 # Plot Multiple Curves
 # ----------------------------
+st.sidebar.subheader("Curve Coefficients (Optional)")
+X_plot = np.linspace(x_min, x_max, 500)
 fig = go.Figure()
-for name, data in curves_data.items():
-    poly = PolynomialFeatures(degree=data["degree"])
-    X_poly = poly.fit_transform(data["X"].reshape(-1,1))
-    model = LinearRegression()
-    model.fit(X_poly, data["Y"])
-    x_line = np.linspace(min(data["X"]), max(data["X"]), 500)
-    y_line = model.predict(poly.transform(x_line.reshape(-1,1)))
-    
-    fig.add_trace(go.Scatter(x=data["X"], y=data["Y"], mode='markers', name=f"{name} Points"))
-    fig.add_trace(go.Scatter(x=x_line, y=y_line, mode='lines', name=f"{name} Fit"))
+all_curves = []
 
-fig.update_layout(
-    title="Multiple Polynomial Curves",
-    xaxis_title="X-axis",
-    yaxis_title="Y-axis",
-    width=900,
-    height=600
-)
-st.plotly_chart(fig, use_container_width=True)
+for curve_idx in range(num_curves):
+    coeffs = []
+    for d in range(degree+1):
+        coeff = st.sidebar.slider(f"Curve {curve_idx+1} a{d}", -10.0, 10.0, 1.0 if d==0 else 0.0, 0.1)
+        coeffs.append(coeff)
+    all_curves.append(coeffs)
+    
+    Y_plot = sum([coeffs[i]*X_plot**i for i in range(degree+1)])
+    fig.add_trace(go.Scatter(x=X_plot.flatten(), y=Y_plot.flatten(), mode='lines', name=f"Curve {curve_idx+1}"))
+
+    # Show equation
+    equation_str = " + ".join([f"{coeffs[i]:.2f}*x^{i}" for i in range(degree+1)])
+    st.sidebar.markdown(f"**Curve {curve_idx+1} Equation:** y = {equation_str}")
+
+# ----------------------------
+# Polynomial Regression Fitting
+# ----------------------------
+st.subheader("📈 Fit Polynomial Regression to Data")
+deg_fit = st.slider("Degree of Regression Fit", 1, 5, 2)
+poly_features = PolynomialFeatures(degree=deg_fit)
+X_poly = poly_features.fit_transform(X_data)
+model = LinearRegression()
+model.fit(X_poly, Y_data)
+Y_fit = model.predict(poly_features.transform(X_plot.reshape(-1,1)))
+r2 = r2_score(Y_data, model.predict(X_poly))
+st.write(f"**Fitted Equation:** y = { ' + '.join([f'{coef:.2f}*x^{i}' for i, coef in enumerate(model.coef_)]) } + {model.intercept_:.2f}")
+st.write(f"**R² Score:** {r2:.3f}")
+
+# Plot fitted regression and residuals
+fig.add_trace(go.Scatter(x=X_plot.flatten(), y=Y_fit.flatten(), mode='lines', name="Fitted Regression", line=dict(color='black', dash='dash')))
+fig.add_trace(go.Scatter(x=X_data.flatten(), y=Y_data.flatten(), mode='markers', name="Data Points", marker=dict(color='red', size=10)))
+
+# ----------------------------
+# Residuals Plot
+# ----------------------------
+residuals = Y_data - model.predict(X_poly)
+st.subheader("Residuals")
+st.bar_chart(residuals)
 
 # ----------------------------
 # Optional 3D Surface
 # ----------------------------
+enable_3d = st.sidebar.checkbox("Enable 3D Surface (z=f(x,y))")
 if enable_3d:
-    st.subheader("3D Bivariate Polynomial Surface (z = f(x, y))")
+    st.subheader("Interactive 3D Polynomial Surface")
     x_range = np.linspace(-5,5,20)
     y_range = np.linspace(-5,5,20)
     X_grid, Y_grid = np.meshgrid(x_range, y_range)
-    
-    # Example bivariate polynomial: z = 1 + 2x + 3y + xy + x^2 + y^2
-    Z_grid = 1 + 2*X_grid + 3*Y_grid + X_grid*Y_grid + X_grid**2 + Y_grid**2
-    
+    st.sidebar.subheader("3D Surface Coefficients")
+    c0 = st.sidebar.slider("c0", -5.0, 5.0, 1.0)
+    c1 = st.sidebar.slider("c1*x", -5.0, 5.0, 1.0)
+    c2 = st.sidebar.slider("c2*y", -5.0, 5.0, 1.0)
+    c3 = st.sidebar.slider("c3*x*y", -5.0, 5.0, 0.5)
+    c4 = st.sidebar.slider("c4*x^2", -5.0, 5.0, 0.5)
+    c5 = st.sidebar.slider("c5*y^2", -5.0, 5.0, 0.5)
+    Z_grid = c0 + c1*X_grid + c2*Y_grid + c3*X_grid*Y_grid + c4*X_grid**2 + c5*Y_grid**2
     fig3d = go.Figure(data=[go.Surface(z=Z_grid, x=X_grid, y=Y_grid)])
-    fig3d.update_layout(
-        title="3D Polynomial Surface",
-        scene=dict(
-            xaxis_title="X-axis",
-            yaxis_title="Y-axis",
-            zaxis_title="Z-axis"
-        ),
-        width=900,
-        height=700
-    )
+    fig3d.update_layout(title="3D Polynomial Surface", scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z"), width=900, height=700)
     st.plotly_chart(fig3d, use_container_width=True)
 
-# Footer
+# ----------------------------
+# Display 1D Plot
+# ----------------------------
+fig.update_layout(title="Polynomial Playground - Multiple Curves + Regression Fit",
+                  xaxis_title="X-axis", yaxis_title="Y-axis", width=900, height=600)
+st.plotly_chart(fig, use_container_width=True)
+
 st.markdown("---")
-st.markdown("💡 Tip: Drag points in the table or edit values to see curves update. Use the 3D toggle for multivariate polynomial surfaces.")
+st.markdown("💡 Tip: Adjust coefficients, upload data, or manually enter points. Observe fitted curve and residuals interactively.")
+

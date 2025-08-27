@@ -2,7 +2,8 @@
 A professional, interactive dashboard
 # Polynomial Regression Playground 🧮📊
 
-![Uploading ChatGPT Image Aug 27, 2025, 10_01_47 PM.png…]()
+<img width="610" height="612" alt="image" src="https://github.com/user-attachments/assets/b91e9201-eb93-4264-9a3c-646e4a5616ec" />
+
 
 
 Interactive Streamlit app to explore **polynomial regression** like a mini Desmos:
